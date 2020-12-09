@@ -6,6 +6,7 @@
 #include <random>
 #include <chrono>
 #include <fstream>
+#include <list>
 
 using namespace sf;
 using namespace std;
@@ -24,8 +25,15 @@ int rand_uns(int min, int max)
 }
 
 double dt = 0.01;
-bool heating_turn = false;
-double Power_heating = 0.001;
+int size_of_graph_x = 350;
+int size_of_graph_y = 150;
+
+int diagram_size=100;
+
+int heating_turn = 0;
+bool centre = false;
+double Power_heating = 0.01;
+double gravity = 0.01;
 
 pair<double, double> force(double x, double y)
 {
@@ -34,7 +42,7 @@ pair<double, double> force(double x, double y)
 	{
 		double l, f0;
 		l = sqrt(x * x + y * y);
-		f0 = 20000/pow(l, 4)-1000000000/pow(l, 8);
+		f0 = 20000./pow(l, 4)-1000000000./pow(l, 8);
 		if (x != 0)f.first = f0 * x / l;
 		else f.first = 0;
 		if (y != 0)f.second = f0 * y / l;
@@ -84,10 +92,10 @@ public:
 		window->draw(id);
 	}
 
-	void calculate_force(const vector<Ball*> &all_balls)
+	void calculate_force(const list<Ball*> &all_balls)
 	{
 		pair<double, double> flocal;
-		f.first = 0; f.second = 0.001;
+		f.first = 0; f.second = gravity;
 		for (auto b : all_balls)
 		{
 			flocal = force(b->x - x, b->y - y);
@@ -102,10 +110,10 @@ public:
 
 	void live()
 	{
-		if (heating_turn)
+		if (heating_turn!=0)
 		{
-			vx += vx / (vx * vx + vy * vy) * Power_heating * dt;
-			vy += vy / (vx * vx + vy * vy) * Power_heating * dt;
+			vx += vx / (vx * vx + vy * vy) * Power_heating * (double)heating_turn * dt;
+			vy += vy / (vx * vx + vy * vy) * Power_heating * (double)heating_turn * dt;
 		}
 		vx += f.first * dt;
 		vy += f.second * dt;
@@ -124,60 +132,268 @@ public:
 		if (abs(vx) < 3)vx = vx * 1.1;
 		if (abs(vy) < 3)vy = vy * 1.1;
 	}
+
+	void centre_velocity(double Vx, double Vy)
+	{
+		vx -= Vx;
+		vy -= Vy;
+	}
 };
 
 class graph
 {
 	vector<pair<double, double>> data;
+	list <Vertex*> all_vertex;
+	sf::VertexArray id;
+	sf::VertexArray axes;
+	sf::Text textid;
 	int x;
 	int y;
-public:
-	graph(vector<pair<double, double>> &d)
-	{
+	std::string name;
 
+public:
+	graph(pair<double, double> started_data, int number, std::string label)
+	{
+		x = 1000;
+		y = 200 + number * 200;
+		name = label;
+		data.clear();
+		data.push_back(started_data);
+		id.setPrimitiveType(LinesStrip);
+		id.clear();
+		sf::Vertex* new_vertex = new sf::Vertex;
+		new_vertex->position = sf::Vector2f(x + started_data.first, y + started_data.second);
+		new_vertex->color = sf::Color(0, 255, 0);
+		all_vertex.push_back(new_vertex);
+		id.append(*new_vertex);
+
+		axes.setPrimitiveType(LinesStrip);
+		sf::Vertex v1, v2, v3;
+		v1.position = sf::Vector2f(x + size_of_graph_x, y);
+		v2.position = sf::Vector2f(x , y);
+		v3.position = sf::Vector2f(x, y- size_of_graph_y);
+		v1.color = sf::Color(255, 0, 0);
+		v2.color = sf::Color(255, 0, 0);
+		v3.color = sf::Color(255, 0, 0);
+		axes.append(v1);
+		axes.append(v2);
+		axes.append(v3);
+		textid.setPosition(sf::Vector2f(500, 500));/*x + size_of_graph_x / 2, y + size_of_graph_y + 20*/
+		textid.setString(name);
+		//textid.setColor(sf::Color(255, 0, 0));
 	}
+
 	~graph()
 	{
+		for (auto v : all_vertex)delete v;
+	}
 
+	void show(sf::RenderWindow* window)
+	{
+		window->draw(id);
+		window->draw(axes);
+		//window->draw(textid);
+	}
+
+	void push(pair<double, double> new_data)
+	{
+		data.push_back(new_data);
+		sf::Vertex* new_vertex = new sf::Vertex;
+		new_vertex->position = sf::Vector2f(x, y);
+		new_vertex->color = sf::Color(0, 255, 0);
+		all_vertex.push_back(new_vertex);
+		id.append(*new_vertex);
+
+		//рекомпановка графика
+		double max_time = -10000000, min_time = 10000000, max_value = -10000000, min_value = 10000000;
+		for (auto d : data)
+		{
+			if (d.first < min_time)min_time=d.first;
+			if (d.first > max_time)max_time = d.first;
+			if (d.second < min_value)min_value = d.second;
+			if (d.second > max_value)max_value = d.second;
+		}
+		for (int i = 0; i < id.getVertexCount(); i++)
+		{
+			id[i].position = sf::Vector2f(x + (data[i].first-min_time)/(max_time-min_time)*size_of_graph_x, y - (data[i].second - min_value) / (max_value - min_value)*size_of_graph_y);
+		}
+		//конец рекомпановки
 	}
 };
 
-void cold(const vector<Ball*> all_balls)
+class diagram
+{
+	vector<pair<double, double>> data;
+	list <Vertex*> all_vertex;
+	sf::VertexArray id;
+	sf::VertexArray axes;
+	sf::Text textid;
+	int x;
+	int y;
+	int size;
+	std::string name;
+
+public:
+	diagram(int local_size, int number, std::string label)
+	{
+		x = 1000;
+		y = 200 + number * 200;
+		name = label;
+		data.clear();
+		size = local_size;
+		id.setPrimitiveType(LinesStrip);
+		id.clear();
+		for (int i = 0; i < size; i++)
+		{
+			sf::Vertex* new_vertex = new sf::Vertex;
+			new_vertex->position = sf::Vector2f(x, y);
+			new_vertex->color = sf::Color(0, 255, 0);
+			all_vertex.push_back(new_vertex);
+			id.append(*new_vertex);
+		}
+		
+		axes.setPrimitiveType(LinesStrip);
+		sf::Vertex v1, v2, v3;
+		v1.position = sf::Vector2f(x + size_of_graph_x, y);
+		v2.position = sf::Vector2f(x, y);
+		v3.position = sf::Vector2f(x, y - size_of_graph_y);
+		v1.color = sf::Color(255, 0, 0);
+		v2.color = sf::Color(255, 0, 0);
+		v3.color = sf::Color(255, 0, 0);
+		axes.append(v1);
+		axes.append(v2);
+		axes.append(v3);
+		textid.setPosition(sf::Vector2f(500, 500));/*x + size_of_graph_x / 2, y + size_of_graph_y + 20*/
+		textid.setString(name);
+		//textid.setColor(sf::Color(255, 0, 0));
+	}
+
+	~diagram()
+	{
+		for (auto v : all_vertex)delete v;
+	}
+
+	void show(sf::RenderWindow* window)
+	{
+		window->draw(id);
+		window->draw(axes);
+		//window->draw(textid);
+	}
+
+	void push(vector<pair<double, double>> new_data)
+	{
+		data.clear();
+		for (auto d : new_data) data.push_back(d);
+
+		//рекомпановка графика
+		double max_time = -10000000, min_time = 10000000, max_value = -10000000, min_value = 10000000;
+		for (auto d : data)
+		{
+			if (d.first < min_time)min_time = d.first;
+			if (d.first > max_time)max_time = d.first;
+			if (d.second < min_value)min_value = d.second;
+			if (d.second > max_value)max_value = d.second;
+		}
+		for (int i = 0; i < id.getVertexCount(); i++)
+		{
+			id[i].position = sf::Vector2f(x + (data[i].first - min_time) / (max_time - min_time) * size_of_graph_x, y - (data[i].second - min_value) / (max_value - min_value) * size_of_graph_y);
+		}
+		//конец рекомпановки
+	}
+};
+
+void cold(const list<Ball*> all_balls)
 {
 	for (auto b : all_balls)b->lose_energy();
 }
 
-void heat(const vector<Ball*> all_balls)
+void heat(const list<Ball*> all_balls)
 {
 	for (auto b : all_balls)b->rise_energy();
 }
 
+pair<double, double> count_energy(const list<Ball*>& all_balls, double current_time)
+{
+	pair<double, double> local_data;
+	double E=0;
+	for (auto b : all_balls)
+	{
+		E += b->vx * b->vx + b->vy * b->vy;
+	}
+	local_data.first = current_time;
+	local_data.second = E;
+	return local_data;
+}
+
+vector<pair<double, double>> count_bolzman(const list<Ball*>& all_balls)
+{
+	vector<pair<double, double>> local_data;
+	pair<double, double> local_pair;
+	for (int i = 0; i < diagram_size; i++)
+	{
+		local_pair.first = 1000 * i / diagram_size;
+		local_pair.second = 0;
+		for (auto b : all_balls)
+		{
+			if (b->y <= 1000 - 1000 * i / diagram_size && b->y > 1000 - 1000 * (i + 1) / diagram_size)local_pair.second += 1;
+		}
+		local_data.push_back(local_pair);
+	}
+	return local_data;
+}
+
+void centre_active(const list<Ball*>& all_balls)
+{
+	double Vx=0, Vy=0, N=0;
+	for (auto b : all_balls)
+	{
+		N += 1;
+		Vx += b->vx;
+		Vy += b->vy;
+	}
+	Vx = Vx / N;
+	Vy = Vy / N;
+	for (auto b : all_balls)
+	{
+		b->centre_velocity(Vx, Vy);
+	}
+}
+
 int main()
 {
-	vector<Ball*> all_balls;
-	const int Number_balls = 25, fps = 10;
-	int L=sqrt(Number_balls);
-	for (int i = 0; i < Number_balls; i++)
+	list<Ball*> all_balls;
+	list<graph*> all_graphs;
+	list<diagram*> all_diagrams;
+	const int Number_balls = 300, fps = 10;
+	int L=sqrt(Number_balls), j;
+	double current_time = 0;
+	int shag = 0;
+	for (int i=0; i<Number_balls; i++)
 	{
 		Ball* ball = new Ball;
 		all_balls.push_back(ball);
 	}
-	for (int i = 0; i < Number_balls; i++)
+	j = 0;
+	for (auto i : all_balls)
 	{
-		all_balls[i]->x = (i - i % L) * 15 / L + 400;
-		all_balls[i]->y = i % L * 15 + 400;
+		i->x = (j - j % L) * 15 / L + 400;
+		i->y = j % L * 15 + 660;
+		j++;
 	}
+	pair<double, double> local_data;
+	local_data.first = 0; local_data.second = 0;
+	graph gr1(local_data, 0, "Energy");
+	all_graphs.push_back(&gr1);
+	graph gr2(local_data, 1, "Temperature");
+	all_graphs.push_back(&gr2);
+	diagram d1(diagram_size, 3, "Bolzman");
+	all_diagrams.push_back(&d1);
 
 	RenderWindow window(VideoMode(1400, 1000), "My project!");
 	sf::RectangleShape fon;
 	fon.setFillColor(Color(150, 150, 255));
-	sf::Vector2f k;
-	k.x = 800;
-	k.y = 800;
-	fon.setSize(k);
-	k.x = 100;
-	k.y = 100;
-	fon.setPosition(k);
+	fon.setSize(sf::Vector2f(800, 800));
+	fon.setPosition(sf::Vector2f(100, 100));
 	while (window.isOpen())
 	{
 		Event event;
@@ -185,8 +401,9 @@ int main()
 		{
 			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::Down)cold(all_balls);
 			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::Up)heat(all_balls);
-			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::H)heating_turn = true;
-			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::C)heating_turn = false;
+			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::H)if (heating_turn < 1)heating_turn +=1;
+			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::C)if (heating_turn > -1)heating_turn -= 1;
+			if (event.type == Event::KeyPressed && event.key.code == sf::Keyboard::N) { if (centre == false)centre = true; else centre = false; }
 			if (event.type == Event::Closed)
 				window.close();
 		}
@@ -194,18 +411,29 @@ int main()
 		window.draw(fon);
 		for (int k = 0; k < fps; k++)
 		{
-			for (int i = 0; i < Number_balls; i++)
+			current_time += dt;
+			if(centre)centre_active(all_balls);
+			for (auto i : all_balls)
 			{
-				all_balls[i]->calculate_force(all_balls);
+				i->calculate_force(all_balls);
 			}
-			for (int i = 0; i < Number_balls; i++)
+			for (auto i : all_balls)
 			{
-				all_balls[i]->live();
+				i->live();
 			}
 		}
-		for (int i = 0; i < Number_balls; i++) { all_balls[i]->show(&window); }
+		for (auto i : all_balls)i->show(&window);
+		if (shag%100==0)
+		{
+			local_data = count_energy(all_balls, current_time);
+			gr1.push(local_data);
+			d1.push(count_bolzman(all_balls));
+		}
+		for (auto i : all_graphs)i->show(&window);
+		for (auto i : all_diagrams)i->show(&window);
 		//sf::sleep(sf::milliseconds(2000));
 		window.display();
+		shag++;
 	}
 	for (auto b : all_balls)delete b;
 	return 0;
